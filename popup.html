@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Family Vault</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <p class="eyebrow">Family Vault</p>
+        <h1>Autofill</h1>
+      </header>
+
+      <section id="login-view" class="panel hidden">
+        <label>
+          <span>API key</span>
+          <input id="api-key" type="password" autocomplete="off" placeholder="Paste one-time key">
+        </label>
+        <button id="connect">Connect</button>
+        <p id="login-message" class="message"></p>
+      </section>
+
+      <section id="vault-view" class="panel hidden">
+        <div class="summary">
+          <strong id="count">0</strong>
+          <span id="count-label">passwords saved</span>
+        </div>
+        <p id="sync-time" class="message"></p>
+        <div id="password-list" class="list"></div>
+        <div class="actions">
+          <button id="sync" class="secondary">Sync</button>
+          <button id="logout" class="secondary danger">Disconnect</button>
+        </div>
+      </section>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
