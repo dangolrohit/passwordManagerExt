@@ -81,14 +81,53 @@ function normalizeHost(value) {
   }
 }
 
-function findMatchingPasswords(pageUrl, passwords) {
-  const pageHost = normalizeHost(pageUrl);
-  if (!pageHost) return [];
+function compact(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
 
-  return passwords.filter((item) => {
-    const itemHost = normalizeHost(item.websiteUrl || "");
-    return itemHost && (pageHost === itemHost || pageHost.endsWith(`.${itemHost}`));
-  });
+function hostTokens(host) {
+  return host
+    .split(".")
+    .filter((part) => part && !["www", "com", "net", "org", "io", "app", "co", "np"].includes(part));
+}
+
+function scorePasswordForPage(pageUrl, pageTitle, item, totalPasswords) {
+  const pageHost = normalizeHost(pageUrl);
+  if (!pageHost) return 0;
+
+  const itemHost = normalizeHost(item.websiteUrl || "");
+  const platform = compact(item.platformName);
+  const pageTitleText = compact(pageTitle);
+  const pageHostText = compact(pageHost);
+  const itemHostText = compact(itemHost);
+  let score = 0;
+
+  if (itemHost && pageHost === itemHost) score += 100;
+  if (itemHost && pageHost.endsWith(`.${itemHost}`)) score += 90;
+  if (itemHost && itemHost.endsWith(`.${pageHost}`)) score += 80;
+  if (itemHostText && pageHostText.includes(itemHostText)) score += 45;
+  if (platform && pageHostText.includes(platform)) score += 35;
+  if (platform && pageTitleText.includes(platform)) score += 25;
+
+  for (const token of hostTokens(pageHost)) {
+    if (platform && platform.includes(token)) score += 18;
+    if (itemHostText && itemHostText.includes(token)) score += 18;
+  }
+
+  if (totalPasswords === 1 && score === 0) score = 10;
+  return score;
+}
+
+function findMatchingPasswords(pageUrl, pageTitle, passwords) {
+  return passwords
+    .map((item) => ({
+      ...item,
+      matchScore: scorePasswordForPage(pageUrl, pageTitle, item, passwords.length)
+    }))
+    .filter((item) => item.matchScore > 0)
+    .sort((a, b) => b.matchScore - a.matchScore);
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -127,7 +166,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const synced = await syncPasswords();
         passwords = synced.passwords;
       }
-      sendResponse({ matches: findMatchingPasswords(message.url || "", passwords) });
+      sendResponse({ matches: findMatchingPasswords(message.url || "", message.title || "", passwords) });
       return;
     }
 

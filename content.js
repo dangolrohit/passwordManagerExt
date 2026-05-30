@@ -16,15 +16,40 @@ function scoreUsernameField(input) {
     input.id,
     input.placeholder,
     input.autocomplete,
-    input.getAttribute("aria-label")
+    input.getAttribute("aria-label"),
+    input.labels ? Array.from(input.labels).map((label) => label.textContent).join(" ") : ""
   ].join(" ").toLowerCase();
 
-  if (haystack.includes("email")) return 5;
-  if (haystack.includes("user")) return 4;
-  if (haystack.includes("login")) return 3;
-  if (input.type === "email") return 5;
-  if (input.type === "text") return 2;
-  return 0;
+  let score = 0;
+  if (haystack.includes("email")) score += 7;
+  if (haystack.includes("user")) score += 6;
+  if (haystack.includes("login")) score += 5;
+  if (haystack.includes("phone")) score += 4;
+  if (haystack.includes("account")) score += 3;
+  if (input.autocomplete === "username" || input.autocomplete === "email") score += 8;
+  if (input.type === "email") score += 7;
+  if (input.type === "tel") score += 4;
+  if (input.type === "text" || input.type === "") score += 2;
+  if (input.disabled || input.readOnly) score -= 100;
+  return score;
+}
+
+function scorePasswordField(input) {
+  const haystack = [
+    input.name,
+    input.id,
+    input.placeholder,
+    input.autocomplete,
+    input.getAttribute("aria-label"),
+    input.labels ? Array.from(input.labels).map((label) => label.textContent).join(" ") : ""
+  ].join(" ").toLowerCase();
+
+  let score = visible(input) ? 10 : -100;
+  if (input.autocomplete === "current-password") score += 15;
+  if (haystack.includes("password")) score += 10;
+  if (haystack.includes("new-password")) score -= 25;
+  if (input.disabled || input.readOnly) score -= 100;
+  return score;
 }
 
 function setValue(input, value) {
@@ -39,23 +64,38 @@ function chooseCredential(matches) {
   return matches.find((item) => item.password && (item.username || item.email || item.phone)) || matches[0];
 }
 
+function findLoginForm() {
+  const passwordInputs = Array.from(document.querySelectorAll('input[type="password"]'))
+    .map((input) => ({ input, score: scorePasswordField(input) }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  const passwordInput = passwordInputs[0]?.input;
+  if (!passwordInput) return null;
+
+  const form = passwordInput.closest("form") || document;
+  const scopeInputs = Array.from(form.querySelectorAll("input"));
+  const allInputs = scopeInputs.length > 1 ? scopeInputs : Array.from(document.querySelectorAll("input"));
+
+  const usernameInput = allInputs
+    .filter((input) => input !== passwordInput && visible(input) && ["email", "text", "tel", "search", ""].includes(input.type))
+    .map((input) => ({ input, score: scoreUsernameField(input) }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)[0]?.input;
+
+  return { passwordInput, usernameInput };
+}
+
 function autofill(matches) {
   if (!matches.length || document.documentElement.dataset[AUTOFILL_MARK] === "true") return;
 
-  const passwordInput = Array.from(document.querySelectorAll('input[type="password"]')).find(visible);
-  if (!passwordInput) return;
+  const loginForm = findLoginForm();
+  if (!loginForm) return;
 
   const credential = chooseCredential(matches);
-  const candidates = Array.from(document.querySelectorAll("input")).filter((input) => {
-    return input !== passwordInput && visible(input) && ["email", "text", "tel", ""].includes(input.type);
-  });
 
-  const usernameInput = candidates
-    .map((input) => ({ input, score: scoreUsernameField(input) }))
-    .sort((a, b) => b.score - a.score)[0]?.input;
-
-  setValue(usernameInput, credential.email || credential.username || credential.phone || "");
-  setValue(passwordInput, credential.password || "");
+  setValue(loginForm.usernameInput, credential.email || credential.username || credential.phone || "");
+  setValue(loginForm.passwordInput, credential.password || "");
 
   document.documentElement.dataset[AUTOFILL_MARK] = "true";
   showToast(`Filled ${credential.platformName || "saved password"}`);
@@ -92,7 +132,12 @@ async function runAutofill() {
   window.clearTimeout(debounceTimer);
   debounceTimer = window.setTimeout(async () => {
     try {
-      const response = await sendMessage({ type: "GET_MATCHES_FOR_PAGE", url: window.location.href });
+      if (!findLoginForm()) return;
+      const response = await sendMessage({
+        type: "GET_MATCHES_FOR_PAGE",
+        url: window.location.href,
+        title: document.title
+      });
       if (response?.matches?.length) {
         autofill(response.matches);
       }
