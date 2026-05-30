@@ -93,15 +93,31 @@ function hostTokens(host) {
     .filter((part) => part && !["www", "com", "net", "org", "io", "app", "co", "np"].includes(part));
 }
 
+function getPagePath(pageUrl) {
+  try {
+    return new URL(pageUrl).pathname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function cleanHintList(values, cleaner) {
+  return Array.isArray(values) ? values.map(cleaner).filter(Boolean) : [];
+}
+
 function scorePasswordForPage(pageUrl, pageTitle, item, totalPasswords) {
   const pageHost = normalizeHost(pageUrl);
   if (!pageHost) return 0;
 
   const itemHost = normalizeHost(item.websiteUrl || "");
+  const pagePath = getPagePath(pageUrl);
   const platform = compact(item.platformName);
   const pageTitleText = compact(pageTitle);
   const pageHostText = compact(pageHost);
   const itemHostText = compact(itemHost);
+  const hintHosts = cleanHintList(item.autofill?.hosts, normalizeHost);
+  const hintKeywords = cleanHintList(item.autofill?.keywords, compact);
+  const loginPaths = Array.isArray(item.autofill?.loginPaths) ? item.autofill.loginPaths : [];
   let score = 0;
 
   if (itemHost && pageHost === itemHost) score += 100;
@@ -111,9 +127,26 @@ function scorePasswordForPage(pageUrl, pageTitle, item, totalPasswords) {
   if (platform && pageHostText.includes(platform)) score += 35;
   if (platform && pageTitleText.includes(platform)) score += 25;
 
+  for (const hintHost of hintHosts) {
+    if (pageHost === hintHost) score += 110;
+    if (pageHost.endsWith(`.${hintHost}`)) score += 95;
+    if (hintHost.endsWith(`.${pageHost}`)) score += 70;
+  }
+
+  for (const keyword of hintKeywords) {
+    if (keyword.length < 2) continue;
+    if (pageHostText.includes(keyword)) score += 35;
+    if (pageTitleText.includes(keyword)) score += 20;
+  }
+
+  if (loginPaths.some((path) => pagePath === path || pagePath.startsWith(`${path}/`))) {
+    score += 15;
+  }
+
   for (const token of hostTokens(pageHost)) {
     if (platform && platform.includes(token)) score += 18;
     if (itemHostText && itemHostText.includes(token)) score += 18;
+    if (hintKeywords.includes(compact(token))) score += 18;
   }
 
   if (totalPasswords === 1 && score === 0) score = 10;
